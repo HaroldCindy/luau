@@ -279,9 +279,7 @@ static void reallymarkobject(global_State* g, GCObject* o)
     case LUA_TUPVAL:
     {
         UpVal* uv = gco2uv(o);
-        // TODO: is this actually necessary? Does it matter if fixed values are black?
-        if (iscollectable(uv->v) && !isfixed(gcvalue(uv->v)))
-            markvalue(g, uv->v);
+        markvalue(g, uv->v);
         if (!upisopen(uv)) // closed?
             gray2black(o); // open upvalues are never black
         return;
@@ -763,6 +761,8 @@ static size_t clearupvals(lua_State* L)
         LUAU_ASSERT(upisopen(uv));
         LUAU_ASSERT(uv->u.open.next->u.open.prev == uv && uv->u.open.prev->u.open.next == uv);
         LUAU_ASSERT(!isblack(obj2gco(uv))); // open upvalues are never black
+        // TODO: ... is my isfixed() addition correct here? I think so?
+        //  We shouldn't really care what color fixed values are.
         LUAU_ASSERT(iswhite(obj2gco(uv)) || !iscollectable(uv->v) || !iswhite(gcvalue(uv->v)) || isfixed(gcvalue(uv->v)));
 
         if (uv->markedopen)
@@ -1228,7 +1228,7 @@ void luaC_upvalclosed(lua_State* L, UpVal* uv)
 
     if (isgray(o))
     {
-        if (keepinvariant(g) && !isfixed(o))
+        if (keepinvariant(g))
         {
             gray2black(o); // closed upvalues need barrier
             luaC_barrier(L, uv, uv->v);
