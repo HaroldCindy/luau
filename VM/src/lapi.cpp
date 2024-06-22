@@ -1546,29 +1546,28 @@ static bool gcfixingvisitor(void * context, lua_Page *page, GCObject *obj)
         }
         if (!cl->isC)
         {
-            /*if (cl->l.p && cl->l.p->nups)
+            if (cl->l.p && cl->l.p->nups)
             {
                 // I seem to recall that nupvalues is 0 on the closure
                 // and present on the proto for lua functions.
                 return false;
-            }*/
-            // ATM we don't know if the proto can be marked fixed, so just
-            // don't fix Lua closures.
-            return false;
+            }
+            if (!cl->l.p || !isfixed(obj2gco(cl->l.p)))
+            {
+                return false;
+            }
         }
 
-        // Okay, if this closure has trivial upvalues we're okay with fixing it.
+        // Okay, if this closure has no upvalues and a fixed proto we're okay with fixing it.
         luaC_fix(obj);
         return false;
     }
     case LUA_TPROTO:
     {
-        // TODO: Proto fixing doesn't seem to work too well atm. Lots of ASAN
-        //  errors with this enabled.
-        return false;
         // If you've invoked this after something with protos has been loaded,
         // presumably those protos should be around forever.
         Proto *p = &obj->p;
+        bool all_fixed = true;
         for (int i=0; i<p->sizek; ++i)
         {
             // The constants vector can contain Tables, which we normally would
@@ -1579,8 +1578,37 @@ static bool gcfixingvisitor(void * context, lua_Page *page, GCObject *obj)
             // closure constants.
             if (iscollectable(&p->k[i]))
             {
-                luaC_fix(gcvalue(&p->k[i]));
+                if (p->k[i].tt <= LUA_TSTRING)
+                {
+                    // Skip by anything that isn't simple to fix.
+                    luaC_fix(gcvalue(&p->k[i]));
+                }
+                else
+                {
+                    all_fixed = false;
+                }
             }
+        }
+        if (all_fixed)
+        {
+            // Check if its child protos are fixed, we can't fix this if
+            // this isn't the case.
+            // TODO: ehhhh, we probably need to traverse depth-first otherwise
+            //  this might just not do anything for Protos with child Protos?
+            for (int i=0; i<p->sizep; ++i)
+            {
+                if (!isfixed(obj2gco(p->p[i])))
+                {
+                    all_fixed = false;
+                    break;
+                }
+            }
+        }
+
+        if (!all_fixed)
+        {
+            // Can't fix the proto if everything it contains couldn't be fixed.
+            return false;
         }
         luaC_fix(obj);
         return false;
@@ -1686,4 +1714,5 @@ void lua_fixallcollectable(lua_State *L)
             luaC_fix(gcvalue(global_val));
         }
     }
+    luaC_validate(GL);
 }

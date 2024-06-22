@@ -18,6 +18,8 @@ static void validateobjref(global_State* g, GCObject* f, GCObject* t)
 {
     LUAU_ASSERT(!isdead(g, t));
 
+    // These checks are somewhat expensive, but necessary during debugging to make sure we didn't
+    // mess up our fixing scheme.
     if (isfixed(f) && !isfixed(t))
     {
         // If f is fixed, then t must also be fixed. To do otherwise would allow
@@ -44,7 +46,7 @@ static void validateobjref(global_State* g, GCObject* f, GCObject* t)
 
         if (!validity_carveout)
         {
-            fprintf(stderr, "fixed %s pointed to non-fixed %s\n", luaT_typenames[f->gch.tt], luaT_typenames[t->gch.tt]);
+            fprintf(stderr, "fixed %s pointed to non-fixed %s\n", lua_typename(g->mainthread, f->gch.tt), lua_typename(g->mainthread, t->gch.tt));
             LUAU_ASSERT(false);
         }
     }

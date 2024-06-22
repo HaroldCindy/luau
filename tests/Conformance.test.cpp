@@ -270,8 +270,7 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     int result = luau_load(L, chunkname.c_str(), bytecode, bytecodeSize, 0);
     free(bytecode);
 
-    // TODO: Curiously, we can't fixall here if we have Proto fixing enabled, or we get
-    //  various use-after-poison ASAN errors. Not sure what the deal is.
+    // We could also fix here, if we cared to fix the loaded protos.
     // lua_fixallcollectable(L);
 
     if (result == 0 && codegen && !skipCodegen && luau_codegen_supported())

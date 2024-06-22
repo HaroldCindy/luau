@@ -29,6 +29,9 @@ const char* const luaT_typenames[] = {
     "userdata",
     "thread",
     "buffer",
+    "proto",
+    "upval",
+    "deadkey"
 };
 
 const char* const luaT_eventname[] = {
@@ -63,7 +66,7 @@ const char* const luaT_eventname[] = {
 };
 // clang-format on
 
-static_assert(sizeof(luaT_typenames) / sizeof(luaT_typenames[0]) == LUA_T_COUNT, "luaT_typenames size mismatch");
+static_assert(sizeof(luaT_typenames) / sizeof(luaT_typenames[0]) == LUA_TDEADKEY + 1, "luaT_typenames size mismatch");
 static_assert(sizeof(luaT_eventname) / sizeof(luaT_eventname[0]) == TM_N, "luaT_eventname size mismatch");
 static_assert(TM_EQ < 8, "fasttm optimization stores a bitfield with metamethods in a byte");
 

@@ -199,7 +199,7 @@ typedef struct global_State
     struct lua_State* mainthread;
     UpVal uvhead;                                    // head of double-linked list of all open upvalues
     struct Table* mt[LUA_T_COUNT];                   // metatables for basic types
-    TString* ttname[LUA_T_COUNT];       // names for basic types
+    TString* ttname[LUA_TDEADKEY];       // names for basic types
     TString* tmname[TM_N];             // array with tag-method names
 
     TValue pseudotemp; // storage for temporary values used in pseudo2addr
