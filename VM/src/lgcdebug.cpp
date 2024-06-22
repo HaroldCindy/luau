@@ -18,6 +18,37 @@ static void validateobjref(global_State* g, GCObject* f, GCObject* t)
 {
     LUAU_ASSERT(!isdead(g, t));
 
+    if (isfixed(f) && !isfixed(t))
+    {
+        // If f is fixed, then t must also be fixed. To do otherwise would allow
+        // t to be marked black and collected out from underneath f. We do, however,
+        // have a handful of cases where we know this won't result in GC errors.
+        bool validity_carveout = false;
+        if (f == obj2gco(g->mainthread))
+        {
+            // We expect the main thread to be fixed, but it can have a non-fixed globals table
+            // and non-fixed items on its stack. We'll still traverse it anyway. We don't mark
+            // any other threads fixed, so this is fine.
+            validity_carveout = true;
+        }
+        else if (f->gch.tt == LUA_TFUNCTION && t == obj2gco(f->cl.env))
+        {
+            // This one is tricky. A fixed function pointing to a non-fixed env is okay, since
+            // we expect something else to be keeping env alive if we're in safeenv mode, which
+            // is the only mode in which we allow functions to be fixed.
+            // Note that this _could_ cause still issues if you xmove fixed closures between
+            // threads that have different envs. In that case, you're required to also `luaC_fix()`
+            // the env manually.
+            validity_carveout = true;
+        }
+
+        if (!validity_carveout)
+        {
+            fprintf(stderr, "fixed %s pointed to non-fixed %s\n", luaT_typenames[f->gch.tt], luaT_typenames[t->gch.tt]);
+            LUAU_ASSERT(false);
+        }
+    }
+
     if (keepinvariant(g))
     {
         // basic incremental invariant: black can't point to white
