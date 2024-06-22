@@ -249,8 +249,8 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     // Protect core libraries and metatables from modification
     luaL_sandbox(L);
 
-    // Everything in the state at this point should stay around until `lua_close()`. Freeze it.
-    lua_freeze(L);
+    // Everything in the state at this point should stay around until `lua_close()`. Fix it.
+    lua_fixallcollectable(L);
 
     // Create a new writable global table for current thread
     luaL_sandboxthread(L);
@@ -270,9 +270,9 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     int result = luau_load(L, chunkname.c_str(), bytecode, bytecodeSize, 0);
     free(bytecode);
 
-    // TODO: Curiously, we can't freeze here if we have Proto freezing enabled, or we get
+    // TODO: Curiously, we can't fixall here if we have Proto fixing enabled, or we get
     //  various use-after-poison ASAN errors. Not sure what the deal is.
-    // lua_freeze(L);
+    // lua_fixallcollectable(L);
 
     if (result == 0 && codegen && !skipCodegen && luau_codegen_supported())
     {

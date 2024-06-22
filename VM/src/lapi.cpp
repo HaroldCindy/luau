@@ -1523,7 +1523,7 @@ lua_Alloc lua_getallocf(lua_State* L, void** ud)
 }
 
 
-static bool gcfreezevisitor(void * context, lua_Page *page, GCObject *obj)
+static bool gcfixingvisitor(void * context, lua_Page *page, GCObject *obj)
 {
     LUAU_ASSERT(iswhite(obj));
 
@@ -1593,8 +1593,6 @@ static bool gcfreezevisitor(void * context, lua_Page *page, GCObject *obj)
     }
 }
 
-// TODO: there's unfortunate overlap between naming of `table.freeze()` and this.
-//  Better name?
 static bool is_fixable_table(const TValue *tv)
 {
     if (!ttistable(tv))
@@ -1618,7 +1616,7 @@ static bool is_fixable_table(const TValue *tv)
     return true;
 }
 
-void lua_freeze(lua_State *L)
+void lua_fixallcollectable(lua_State *L)
 {
     // Need to do a full GC first, we want all objects to be white
     luaC_fullgc(L);
@@ -1627,9 +1625,9 @@ void lua_freeze(lua_State *L)
     // won't dynamically switch out the global env.
     LUAU_ASSERT(GL->gt->safeenv);
 
-    // Freeze all GCObjects that we know are freezable without any context
+    // Fix all GCObjects that we know are fixable without any context
     // as to what references them.
-    luaM_visitgco(GL, nullptr, gcfreezevisitor);
+    luaM_visitgco(GL, nullptr, gcfixingvisitor);
 
     // Traverse direct referents of the global table while avoiding anything
     // that might invoke the GC, meaning most lua API calls must be avoided.
@@ -1647,8 +1645,8 @@ void lua_freeze(lua_State *L)
         base_globals = hvalue(index_val);
     }
 
-    // Now let's walk the globals table, scanning for things we can freeze
-    // Mostly, we're checking to see if we can freeze tables related to
+    // Now let's walk the globals table, scanning for things we can fix
+    // Mostly, we're checking to see if we can fix tables related to
     // modules for builtins.
     for (int global_idx=0; global_idx<sizenode(base_globals); ++global_idx)
     {
