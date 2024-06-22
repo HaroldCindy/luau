@@ -69,6 +69,7 @@
 
 #define changewhite(x) ((x)->gch.marked ^= WHITEBITS)
 #define gray2black(x) l_setbit((x)->gch.marked, BLACKBIT)
+#define luaC_fix(x) l_setbit((x)->gch.marked, FIXEDBIT)
 
 #define luaC_white(g) cast_to(uint8_t, ((g)->currentwhite) & WHITEBITS)
 

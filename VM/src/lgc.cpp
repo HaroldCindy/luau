@@ -232,8 +232,34 @@ static void removeentry(LuaNode* n)
         setttype(gkey(n), LUA_TDEADKEY); // dead key; remove it
 }
 
+static inline bool shouldtraverse(global_State* g, GCObject *o)
+{
+    if (!isfixed(o))
+    {
+        // We want to traverse all non-fixed objects.
+        return true;
+    }
+
+    switch(o->gch.tt)
+    {
+    case LUA_TSTRING:
+    case LUA_TFUNCTION:
+    case LUA_TPROTO:
+    case LUA_TTABLE:
+        // It's okay not to traverse these if they're fixed
+        return false;
+    default:
+        return true;
+    }
+}
+
 static void reallymarkobject(global_State* g, GCObject* o)
 {
+    if (!shouldtraverse(g, o))
+    {
+        return;
+    }
+
     LUAU_ASSERT(iswhite(o) && !isdead(g, o));
     white2gray(o);
     switch (o->gch.tt)
@@ -253,7 +279,9 @@ static void reallymarkobject(global_State* g, GCObject* o)
     case LUA_TUPVAL:
     {
         UpVal* uv = gco2uv(o);
-        markvalue(g, uv->v);
+        // TODO: is this actually necessary? Does it matter if fixed values are black?
+        if (iscollectable(uv->v) && !isfixed(gcvalue(uv->v)))
+            markvalue(g, uv->v);
         if (!upisopen(uv)) // closed?
             gray2black(o); // open upvalues are never black
         return;
@@ -451,6 +479,13 @@ static void shrinkstack(lua_State* L)
 static size_t propagatemark(global_State* g)
 {
     GCObject* o = g->gray;
+    // Don't try to traverse fixed objects, they will never be collected,
+    // and they're not allowed to have references to non-fixed objects.
+    if (!shouldtraverse(g, o))
+    {
+        return 0;
+    }
+
     LUAU_ASSERT(isgray(o));
     gray2black(o);
     switch (o->gch.tt)
@@ -728,7 +763,7 @@ static size_t clearupvals(lua_State* L)
         LUAU_ASSERT(upisopen(uv));
         LUAU_ASSERT(uv->u.open.next->u.open.prev == uv && uv->u.open.prev->u.open.next == uv);
         LUAU_ASSERT(!isblack(obj2gco(uv))); // open upvalues are never black
-        LUAU_ASSERT(iswhite(obj2gco(uv)) || !iscollectable(uv->v) || !iswhite(gcvalue(uv->v)));
+        LUAU_ASSERT(iswhite(obj2gco(uv)) || !iscollectable(uv->v) || !iswhite(gcvalue(uv->v)) || isfixed(gcvalue(uv->v)));
 
         if (uv->markedopen)
         {
@@ -1193,7 +1228,7 @@ void luaC_upvalclosed(lua_State* L, UpVal* uv)
 
     if (isgray(o))
     {
-        if (keepinvariant(g))
+        if (keepinvariant(g) && !isfixed(o))
         {
             gray2black(o); // closed upvalues need barrier
             luaC_barrier(L, uv, uv->v);
@@ -1255,3 +1290,4 @@ const char* luaC_statename(int state)
         return NULL;
     }
 }
+

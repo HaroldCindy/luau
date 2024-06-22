@@ -21,7 +21,9 @@ static void validateobjref(global_State* g, GCObject* f, GCObject* t)
     if (keepinvariant(g))
     {
         // basic incremental invariant: black can't point to white
-        LUAU_ASSERT(!(isblack(f) && iswhite(t)));
+        // Although it's okay for a black object to reference a white object
+        // if the referenced object is fixed, we wouldn't have changed the mark.
+        LUAU_ASSERT(!(isblack(f) && iswhite(t)) || isfixed(t));
     }
 }
 

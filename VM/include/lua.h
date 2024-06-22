@@ -337,6 +337,8 @@ LUA_API void lua_cleartable(lua_State* L, int idx);
 
 LUA_API lua_Alloc lua_getallocf(lua_State* L, void** ud);
 
+LUA_API void lua_freeze(lua_State *L);
+
 /*
 ** reference system, can be used to pin objects
 */

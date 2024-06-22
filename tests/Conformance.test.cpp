@@ -249,6 +249,9 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     // Protect core libraries and metatables from modification
     luaL_sandbox(L);
 
+    // Everything in the state at this point should stay around until `lua_close()`. Freeze it.
+    lua_freeze(L);
+
     // Create a new writable global table for current thread
     luaL_sandboxthread(L);
 
@@ -267,6 +270,10 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     int result = luau_load(L, chunkname.c_str(), bytecode, bytecodeSize, 0);
     free(bytecode);
 
+    // TODO: Curiously, we can't freeze here if we have Proto freezing enabled, or we get
+    //  various use-after-poison ASAN errors. Not sure what the deal is.
+    // lua_freeze(L);
+
     if (result == 0 && codegen && !skipCodegen && luau_codegen_supported())
     {
         Luau::CodeGen::CompilationOptions nativeOpts = codegenOptions ? *codegenOptions : defaultCodegenOptions();
@@ -279,6 +286,10 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     while (yield && (status == LUA_YIELD || status == LUA_BREAK))
     {
         yield(L);
+        for (int i=0; i<50000; ++i)
+        {
+            lua_gc(L, LUA_GCCOLLECT, 0);
+        }
         status = lua_resume(L, nullptr, 0);
     }
 
@@ -297,6 +308,13 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
 
         FAIL(error);
     }
+
+    // Do a final few full GCs so we can get metrics about what can't be freed.
+    for (int i=0; i<5; ++i)
+    {
+        lua_gc(L, LUA_GCCOLLECT, 0);
+    }
+    fprintf(stderr, "%d\n", lua_gc(L, LUA_GCCOUNT, 0));
 
     return globalState;
 }

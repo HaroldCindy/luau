@@ -12,6 +12,7 @@
 #include "lvm.h"
 #include "lnumutils.h"
 #include "lbuffer.h"
+#include "lmem.h"
 
 #include <string.h>
 
@@ -1519,4 +1520,172 @@ lua_Alloc lua_getallocf(lua_State* L, void** ud)
     if (ud)
         *ud = L->global->ud;
     return f;
+}
+
+
+static bool gcfreezevisitor(void * context, lua_Page *page, GCObject *obj)
+{
+    LUAU_ASSERT(iswhite(obj));
+
+    switch(obj->gch.tt)
+    {
+    case LUA_TFUNCTION:
+    {
+        Closure *cl = &obj->cl;
+        if (cl->env && !cl->env->safeenv)
+        {
+            // If people can mess with the env, then we
+            // definitely shouldn't fix this.
+            return false;
+        }
+        if (cl->nupvalues)
+        {
+            // Upvalues are hard because they might get replaced with
+            // a collectable value from the C API later.
+            return false;
+        }
+        if (!cl->isC)
+        {
+            /*if (cl->l.p && cl->l.p->nups)
+            {
+                // I seem to recall that nupvalues is 0 on the closure
+                // and present on the proto for lua functions.
+                return false;
+            }*/
+            // ATM we don't know if the proto can be marked fixed, so just
+            // don't fix Lua closures.
+            return false;
+        }
+
+        // Okay, if this closure has trivial upvalues we're okay with fixing it.
+        luaC_fix(obj);
+        return false;
+    }
+    case LUA_TPROTO:
+    {
+        // TODO: Proto fixing doesn't seem to work too well atm. Lots of ASAN
+        //  errors with this enabled.
+        return false;
+        // If you've invoked this after something with protos has been loaded,
+        // presumably those protos should be around forever.
+        Proto *p = &obj->p;
+        for (int i=0; i<p->sizek; ++i)
+        {
+            // The constants vector can contain Tables, which we normally would
+            // only want to mark fixed if they were set to readonly, but we can
+            // also have constant Table shapes that are used by `LOP_DUPTABLE`.
+            // Those should always be marked fixed since they can't reference anything.
+            // and will never be mutated, only cloned. Should be the same with
+            // closure constants.
+            if (iscollectable(&p->k[i]))
+            {
+                luaC_fix(gcvalue(&p->k[i]));
+            }
+        }
+        luaC_fix(obj);
+        return false;
+    }
+    case LUA_TSTRING:
+        luaC_fix(obj);
+        return false;
+    default:
+        return false;
+    }
+}
+
+// TODO: there's unfortunate overlap between naming of `table.freeze()` and this.
+//  Better name?
+static bool is_fixable_table(const TValue *tv)
+{
+    if (!ttistable(tv))
+    {
+        // We're only interested in tables.
+        return false;
+    }
+    Table *h = hvalue(tv);
+    if (!h->readonly)
+    {
+        // We're only interested in tables that are readonly.
+        return false;
+    }
+    if (h->metatable)
+    {
+        // Ehh, metatables are difficult to handle. Better not.
+        // Even if this is just marked as a weak table, the GC
+        // is involved in handling that, so it needs to traverse.
+        return false;
+    }
+    return true;
+}
+
+void lua_freeze(lua_State *L)
+{
+    // Need to do a full GC first, we want all objects to be white
+    luaC_fullgc(L);
+    lua_State *GL = lua_mainthread(L);
+    // Freezing doesn't really make sense if we can't be sure that people
+    // won't dynamically switch out the global env.
+    LUAU_ASSERT(GL->gt->safeenv);
+
+    // Freeze all GCObjects that we know are freezable without any context
+    // as to what references them.
+    luaM_visitgco(GL, nullptr, gcfreezevisitor);
+
+    // Traverse direct referents of the global table while avoiding anything
+    // that might invoke the GC, meaning most lua API calls must be avoided.
+    Table *base_globals = GL->gt;
+    if (base_globals->metatable)
+    {
+        // Oof, okay, the thread is probably sandboxed. Let's look for the
+        // real underlying table from the metatable.
+        Table *mt = base_globals->metatable;
+        // This is only safe because we know this should already exist in the
+        // string table if we have sandboxed globals.
+        TString *index_str = luaS_newlstr(L, "__index", strlen("__index"));
+        const TValue *index_val = luaH_getstr(mt, index_str);
+        LUAU_ASSERT(ttistable(index_val));
+        base_globals = hvalue(index_val);
+    }
+
+    // Now let's walk the globals table, scanning for things we can freeze
+    // Mostly, we're checking to see if we can freeze tables related to
+    // modules for builtins.
+    for (int global_idx=0; global_idx<sizenode(base_globals); ++global_idx)
+    {
+        // Don't have to worry about tdeadkey, the val should already be cleared
+        // out in that case, and the name isn't important to us.
+        const TValue *global_val = gval(&base_globals->node[global_idx]);
+        if (!is_fixable_table(global_val))
+            continue;
+
+        Table *glob_val_table = hvalue(global_val);
+        if (glob_val_table->sizearray)
+        {
+            // Well it's potentially fixable, but this definitely isn't a
+            // module-like table.
+            continue;
+        }
+
+        bool contents_fixed = true;
+        for (int content_idx=0; content_idx<sizenode(glob_val_table); ++content_idx)
+        {
+            const TValue *content_val = gval(&glob_val_table->node[content_idx]);
+            if (iscollectable(content_val) && !isfixed(gcvalue(content_val)))
+            {
+                // If the table had anything that was collectable, yet not fixed,
+                // we shouldn't fix this table. It would make it impossible for the
+                // GC to reach its reference.
+                contents_fixed = false;
+                break;
+            }
+        }
+
+        if (contents_fixed)
+        {
+            // Okay, this table has no metatable, is readonly, and has only fixed
+            // or non-collectable objects within it. It's okay for us to fix it.
+            // The GC will never have work to do within it.
+            luaC_fix(gcvalue(global_val));
+        }
+    }
 }
