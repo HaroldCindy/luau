@@ -29,6 +29,7 @@ const char* const luaT_typenames[] = {
     "userdata",
     "thread",
     "buffer",
+    // TODO: remove these, they're only for debugging.
     "proto",
     "upval",
     "deadkey"
@@ -66,6 +67,8 @@ const char* const luaT_eventname[] = {
 };
 // clang-format on
 
+// TODO: remove these, they're only for debugging. I don't know why these aren't in typenames anyway,
+//  even though they can't really be on the stack.
 static_assert(sizeof(luaT_typenames) / sizeof(luaT_typenames[0]) == LUA_TDEADKEY + 1, "luaT_typenames size mismatch");
 static_assert(sizeof(luaT_eventname) / sizeof(luaT_eventname[0]) == TM_N, "luaT_eventname size mismatch");
 static_assert(TM_EQ < 8, "fasttm optimization stores a bitfield with metamethods in a byte");

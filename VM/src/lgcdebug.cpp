@@ -46,7 +46,7 @@ static void validateobjref(global_State* g, GCObject* f, GCObject* t)
 
         if (!validity_carveout)
         {
-            fprintf(stderr, "fixed %s pointed to non-fixed %s\n", lua_typename(g->mainthread, f->gch.tt), lua_typename(g->mainthread, t->gch.tt));
+            fprintf(stderr, "fixed %s pointed to non-fixed %s\n", luaT_typenames[f->gch.tt], luaT_typenames[t->gch.tt]);
             LUAU_ASSERT(false);
         }
     }
