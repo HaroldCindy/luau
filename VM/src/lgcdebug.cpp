@@ -867,7 +867,7 @@ static void enumproto(EnumContext* ctx, Proto* p)
         ctx->edge(ctx->context, enumtopointer(obj2gco(p)), p->execdata, "[native]");
     }
 
-    enumnode(ctx, obj2gco(p), size, p->source ? getstr(p->source) : NULL);
+    enumnode(ctx, obj2gco(p), size, (p->debugname ? getstr(p->debugname) : (p->source ? getstr(p->source) : NULL)));
 
     if (p->sizek)
         enumedges(ctx, obj2gco(p), p->k, p->sizek, "constants");

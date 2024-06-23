@@ -315,6 +315,7 @@ target_sources(Luau.VM PRIVATE
     VM/src/lfunc.cpp
     VM/src/lgc.cpp
     VM/src/lgcdebug.cpp
+    VM/src/lgcgraph.cpp
     VM/src/linit.cpp
     VM/src/lmathlib.cpp
     VM/src/lmem.cpp
@@ -343,6 +344,7 @@ target_sources(Luau.VM PRIVATE
     VM/src/ldo.h
     VM/src/lfunc.h
     VM/src/lgc.h
+    VM/src/lgcgraph.h
     VM/src/lmem.h
     VM/src/lnumutils.h
     VM/src/lobject.h
