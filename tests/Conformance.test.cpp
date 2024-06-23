@@ -252,6 +252,9 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     // Everything in the state at this point should stay around until `lua_close()`. Fix it.
     lua_fixallcollectable(L);
 
+    void luaX_graphheap(lua_State *L, const char *out);
+    luaX_graphheap(L, "/tmp/whatever.json");
+
     // Create a new writable global table for current thread
     luaL_sandboxthread(L);
 
@@ -271,10 +274,7 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     free(bytecode);
 
     // We could also fix here, if we cared to fix the loaded protos.
-    lua_fixallcollectable(L);
-
-    void luaX_graphheap(lua_State *L, const char *out);
-    luaX_graphheap(L, "/tmp/whatever.dot");
+    // lua_fixallcollectable(L);
 
     if (result == 0 && codegen && !skipCodegen && luau_codegen_supported())
     {

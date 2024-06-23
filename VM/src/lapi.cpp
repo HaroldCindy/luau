@@ -294,6 +294,9 @@ int lua_type(lua_State* L, int idx)
 
 const char* lua_typename(lua_State* L, int t)
 {
+    // type names beyond this aren't part of the public API.
+    if (t >= LUA_T_COUNT)
+        return "unknown";
     return (t == LUA_TNONE) ? "no value" : luaT_typenames[t];
 }
 
@@ -1676,19 +1679,41 @@ void lua_fixallcollectable(lua_State *L)
     // Now let's walk the globals table, scanning for things we can fix
     // Mostly, we're checking to see if we can fix tables related to
     // modules for builtins.
+    bool all_globals_fixed = true;
     for (int global_idx=0; global_idx<sizenode(base_globals); ++global_idx)
     {
         // Don't have to worry about tdeadkey, the val should already be cleared
         // out in that case, and the name isn't important to us.
-        const TValue *global_val = gval(&base_globals->node[global_idx]);
+        LuaNode *node = &base_globals->node[global_idx];
+        const TKey *key = gkey(node);
+        const TValue *global_val = gval(node);
+
+        // TODO: handle the upvalue situation here.
+        if (ttisstring(key))
+        {
+            const char *key_str = svalue(key);
+            if (!strcmp(key_str, "ipairs") || !strcmp(key_str, "pairs"))
+            {
+                // pairs and ipairs are special. They have upvalues, so we wouldn't
+                // normally fix them, but if we see them in the globals table we can
+                // be reasonably sure that they're the "real" ipairs and pairs, which
+                // should always have the same upvalues. They're okay to fix.
+                luaC_fix(gcvalue(global_val));
+            }
+        }
+
         if (!is_fixable_table(global_val))
+        {
+            all_globals_fixed = false;
             continue;
+        }
 
         Table *glob_val_table = hvalue(global_val);
         if (glob_val_table->sizearray)
         {
             // Well it's potentially fixable, but this definitely isn't a
             // module-like table.
+            all_globals_fixed = false;
             continue;
         }
 
@@ -1713,6 +1738,18 @@ void lua_fixallcollectable(lua_State *L)
             // The GC will never have work to do within it.
             luaC_fix(gcvalue(global_val));
         }
+        else
+        {
+            all_globals_fixed = false;
+        }
     }
+
+    if (all_globals_fixed)
+    {
+        // If we fixed everything in the globals table, and it's readonly,
+        // it should be okay to fix it. None of its descendents need collection.
+        luaC_fix(obj2gco(base_globals));
+    }
+
     luaC_validate(GL);
 }

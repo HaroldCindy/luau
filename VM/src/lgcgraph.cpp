@@ -1,3 +1,7 @@
+// TODO: this all probably isn't needed. Might be better
+//  to just include obj color / fixed state in luaC_dump()?
+//  Ah well! It's just for initial debugging!
+
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -8,11 +12,10 @@
 #include "lgc.h"
 #include "lgcgraph.h"
 
-
 typedef struct Node
 {
     GCObject* gco;
-    uint8_t tag;
+    uint8_t tt;
     uint8_t memcat;
     size_t size;
     const char* name;
@@ -20,8 +23,8 @@ typedef struct Node
 
 typedef struct Edge
 {
-    GCObject* from;
-    GCObject* to;
+    GCObject* src;
+    GCObject* dst;
     const char* name;
 } Edge;
 
@@ -41,22 +44,23 @@ static std::string generate_node_attrs(const Node &node)
 {
     std::stringstream ss;
 
-    ss << "label=\"(" << luaT_typenames[node.gco->gch.tt] << ") ";
-    if (node.name)
-        ss << node.name;
-    else
-        ss << node_gco_id(node.gco);
-    ss << "\"";
+    // Need to output ID as string due to ints not existing in JSON, they're really floats,
+    // and our pointers are likely 64-bit.
+    ss << "\"id\": \"" << (size_t)node.gco << "\"";
+    ss << ", \"type\": \"" << luaT_typenames[node.tt] << "\"";
+    ss << ", \"name\": \"" << (node.name ? node.name : node_gco_id(node.gco)) << "\"";
+    ss << ", \"fixed\": " << (isfixed(node.gco) ? "true" : "false");
 
-    if (isfixed(node.gco))
-        ss << " color=green";
-    else
-        ss << " color=red";
-
+    const char *color = "unknown";
     if (isblack(node.gco))
-        ss << " fill=black fontcolor=white";
-    else if(isgray(node.gco))
-        ss << " fill=lightgray";
+        color = "black";
+    else if (isgray(node.gco))
+        color = "gray";
+    else if (iswhite(node.gco))
+        color = "white";
+
+    ss << ", \"color\": \"" << color << "\"";
+    ss << ", \"memcat\": " << (int)node.memcat;
 
     return ss.str();
 }
@@ -65,17 +69,14 @@ static std::string generate_edge_attrs(const Edge &edge)
 {
     std::stringstream ss;
 
-    ss << "label=\"";
-    ss << (edge.name ? edge.name : "");
-    ss << "\"";
+    ss << "\"src\": \"" << (size_t)edge.src << "\"";
+    ss << ", \"dst\": \"" << (size_t)edge.dst << "\"";
+    if (edge.name)
+        ss << ", \"name\": \"" << edge.name << "\"";
+    else
+        ss << ", \"name\": null";
 
     return ss.str();
-}
-
-[[maybe_unused]]
-void prune_fixed_without_unfixed_cycle(EnumContext &ctx)
-{
-
 }
 
 void luaX_graphheap(lua_State *L, const char *out)
@@ -92,28 +93,36 @@ void luaX_graphheap(lua_State *L, const char *out)
 
             context.nodes[gco] = {casted_gco, tt, memcat, size, name};
         },
-        [](void* ctx, void* s, void* t, const char* edge_name) {
+        [](void* ctx, void* src, void* dst, const char* edge_name) {
             EnumContext& context = *(EnumContext*)ctx;
-            context.edges.push_back({(GCObject *)s, (GCObject *)t, edge_name});
+            context.edges.push_back({(GCObject *)src, (GCObject *)dst, edge_name});
         });
 
     std::ofstream ss {out, std::ios::out | std::ios::binary};
     LUAU_ASSERT(ss.is_open());
 
-    ss << "digraph ObjectGraph {\n";
-    ss << "  rankdir=LR;\n";
-    ss << "  node[shape=box, style=filled, fillcolor=white];\n";
-
+    ss << "{\n";
+    ss << "  \"nodes\": [\n    ";
+    bool first = true;
     for (const auto &node_iter : ctx.nodes)
     {
-        const Node &node = node_iter.second;
-        ss << "  " << node_gco_id(node.gco) << "[" << generate_node_attrs(node) << "]\n";
+        if (!first)
+            ss << ",\n    ";
+        ss << "{" << generate_node_attrs(node_iter.second) << "}";
+        first = false;
     }
+    ss << "\n  ],\n";
 
+    ss << "  \"edges\": [\n    ";
+    first = true;
     for (const auto &edge : ctx.edges)
     {
-        ss << "  " << node_gco_id(edge.from) << " -> " << node_gco_id(edge.to) << "[" << generate_edge_attrs(edge) << "]\n";
+        if (!first)
+            ss << ",\n    ";
+        ss << "{" << generate_edge_attrs(edge) << "}";
+        first = false;
     }
+    ss << "\n  ]\n";
 
     ss << "}\n";
 
