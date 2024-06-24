@@ -1579,24 +1579,29 @@ static bool gcfixingvisitor(void * context, lua_Page *page, GCObject *obj)
             // Those should always be marked fixed since they can't reference anything.
             // and will never be mutated, only cloned. Should be the same with
             // closure constants.
+            // TODO: This is whack. A proto could have a C function closure that
+            //  would have been fixed later, but isn't currently fixed. That shouldn't
+            //  preclude us fixing the Proto.
             if (iscollectable(&p->k[i]))
             {
+                auto* const_obj = gcvalue(&p->k[i]);
                 if (p->k[i].tt <= LUA_TSTRING)
                 {
                     // Skip by anything that isn't simple to fix.
-                    luaC_fix(gcvalue(&p->k[i]));
+                    luaC_fix(const_obj);
                 }
-                else
+                else if (!isfixed(const_obj))
                 {
                     all_fixed = false;
                 }
             }
         }
+
         if (all_fixed)
         {
-            // Check if its child protos are fixed, we can't fix this if
+            // Okay, now check if its child protos are fixed, we can't fix this if
             // this isn't the case.
-            // TODO: ehhhh, we probably need to traverse depth-first otherwise
+            // TODO: Ehhhh, we probably need to traverse depth-first otherwise
             //  this might just not do anything for Protos with child Protos?
             for (int i=0; i<p->sizep; ++i)
             {
@@ -1688,7 +1693,6 @@ void lua_fixallcollectable(lua_State *L)
         const TKey *key = gkey(node);
         const TValue *global_val = gval(node);
 
-        // TODO: handle the upvalue situation here.
         if (ttisstring(key))
         {
             const char *key_str = svalue(key);
@@ -1698,6 +1702,8 @@ void lua_fixallcollectable(lua_State *L)
                 // normally fix them, but if we see them in the globals table we can
                 // be reasonably sure that they're the "real" ipairs and pairs, which
                 // should always have the same upvalues. They're okay to fix.
+                // The upvalues are also closures, but we expect that we've already fixed
+                // them, and that they won't be boxed in a GC'd `UpVal` object.
                 luaC_fix(gcvalue(global_val));
             }
         }

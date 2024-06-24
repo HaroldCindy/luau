@@ -273,7 +273,7 @@ static StateRef runConformance(const char* name, void (*setup)(lua_State* L) = n
     int result = luau_load(L, chunkname.c_str(), bytecode, bytecodeSize, 0);
     free(bytecode);
 
-    // We could also fix here, if we cared to fix the loaded protos.
+    // We can also fixall down here if we never expect to throw away the protos.
     // lua_fixallcollectable(L);
 
     if (result == 0 && codegen && !skipCodegen && luau_codegen_supported())
